@@ -1,0 +1,75 @@
+{
+  "call_id": "c86d4b0d-5c9b-4edf-8b07-08a4833dcf50",
+  "call_data": {
+    "id": "c86d4b0d-5c9b-4edf-8b07-08a4833dcf50",
+    "recording_url": "https://cloudphone.tatateleservices.com/file/recording?callId=81c8fac4-d2f4-47f5-85d1-3ef1e1431718&type=rec&token=bElqWWZNMFJla1hoNFdVWXpXb3pkZ1N5N3JmZGNCL2ZRNm9qSDJVUERaMGxMZTBxRW5TbEFQTWhXczRWNnhSVTo6YWIxMjM0Y2Q1NnJ0eXl1dQ%3D%3D",
+    "call_id": "81c8fac4-d2f4-47f5-85d1-3ef1e1431718",
+    "caller_id_number": "+919240211859",
+    "call_to_number": "9685698742",
+    "start_date": "2025-04-28",
+    "start_time": "15:09:55",
+    "duration": "99",
+    "agent_name": "Divya Nigam",
+    "campaign_name": "Retailer Welcome Onboarding"
+  },
+  "transcription": "हेलो हेलो जी नमस्कार सर, मेरी बात श्लोक और जीतू से हो रही है। बहुत ही अच्छा सर, मैं बात कर रही हूँ। अच्छा सर, नमस्ते सर, मैं बड़ो कंपनी से बात कर रही हूँ। बड़ो बायर आपसे सर क्या आपकी किराने की दुकान है सर? हां अच्छा तो शॉप को कौन देखता है सर? आप देखते हैं या श्लोक जी देखते हैं? हां, श्लोक उसकी मम्मी देखते हैं। अच्छा अच्छा तो सर उनसे बात कब तक हो सकती है? अभी तो मैं शाम को बुलाऊँगा 7:00 बजे। अच्छा अच्छा, तो फिर आप आफ्टरनून में सर पॉसिबल है क्या बात करने में? हां जी सर बात कर लेंगे। अच्छा ठीक है। इस टाइम पे बात करेंगे। सर देखिए बड़ो बायर एप है ना सर, तो हमारा एप है बड़ो एप है तो इसमें सर एप्लीकेशन के थ्रू वो बड़ो के जो पार्टनर ब्रांड्स है उनके ऑर्डर लगा सकते हैं सर डायरेक्ट कंपनी से। इसमें देखिए मार्जिन भी मार्जिन अच्छा मिल जाएगा और साथ ही हर ऑर्डर डिलीवर होने पर ₹500 तक का स्कैच कूपन भी रहता है सर ऑफर एंड स्कीम चल रही है सर जैसे मसाले हो गए, चाय पत्ती हो गई, जूस है सर आइस पॉप्स है काफी सारे ब्रांड्स है तो उन पर ऑफर एंड स्कीम चल रही है तो उसी के बारे में इंफॉर्मेशन देने के लिए कॉल है सर। बात करते हैं आप जी जी सर तो उनसे बोल दीजिएगा बड़ो एप का एप्लीकेशन प्ले स्टोर से डाउनलोड कर ले और ऑर्डर लगाएं मैं कॉल बैक कर लूंगी सर ठीक है। ओके सर थैंक्यू नमस्ते सर। थैंक्यू\n",
+  "questions_and_answers": [
+    {
+      "id": "12ecc54f-8b6d-4fa6-bbc5-8f7f89e435b5",
+      "label": "Was there a network issue?",
+      "isActive": true,
+      "details": {
+        "answer": "false",
+        "options": [
+          {
+            "option1": true
+          },
+          {
+            "option2": false
+          }
+        ],
+        "answerType": "boolean",
+        "instructions": "Only answer in 'true' or 'false'.",
+        "questionText": "Was there a network issue?"
+      },
+      "question_text": "Was there a network issue?",
+      "answer_type": "boolean",
+      "instructions": "Only answer in 'true' or 'false'.",
+      "answer": "false",
+      "answered_at": "2025-09-07T14:54:04.426129"
+    },
+    {
+      "id": "51c508bb-ae3c-4c11-9781-b4a76ec6573b",
+      "label": "How long was the call?",
+      "isActive": true,
+      "details": {
+        "answer": "Information not available in the call",
+        "answerType": "integer",
+        "instructions": "Only answer the number while taking minutes as the unit. Like if the call duration was 5.3 minutes then answer the round-off integer that is 5, if it was 1 hr 10 mins then answer 70, don't write the unit minutes in the answer.",
+        "questionText": "How long was the call?"
+      },
+      "question_text": "How long was the call?",
+      "answer_type": "integer",
+      "instructions": "Only answer the number while taking minutes as the unit. Like if the call duration was 5.3 minutes then answer the round-off integer that is 5, if it was 1 hr 10 mins then answer 70, don't write the unit minutes in the answer.",
+      "answer": "Information not available in the call",
+      "answered_at": "2025-09-07T14:54:04.426141"
+    },
+    {
+      "id": "c49c855a-c6c9-4150-bbfa-c5b9a0e00872",
+      "label": "What feedback related to app experience was given by the user to our calling executive?",
+      "isActive": true,
+      "details": {
+        "answer": "No feedback related to app experience was given by the user.  The user was primarily concerned with when they could speak to the shop owner (Shlok's mother) to discuss the Bado app and its features, such as ordering directly from partner brands, good margins, and scratch coupons.  The user did not express any prior experience or opinions regarding the app itself",
+        "answerType": "description",
+        "instructions": "Write an overall summary of the feedback given by the user in maximum 100 words.",
+        "questionText": "What feedback related to app experience was given by the user to our calling executive?"
+      },
+      "question_text": "What feedback related to app experience was given by the user to our calling executive?",
+      "answer_type": "description",
+      "instructions": "Write an overall summary of the feedback given by the user in maximum 100 words.",
+      "answer": "No feedback related to app experience was given by the user.  The user was primarily concerned with when they could speak to the shop owner (Shlok's mother) to discuss the Bado app and its features, such as ordering directly from partner brands, good margins, and scratch coupons.  The user did not express any prior experience or opinions regarding the app itself",
+      "answered_at": "2025-09-07T14:54:04.426143"
+    }
+  ],
+  "processed_at": "2025-09-07T14:54:04.626626"
+}

@@ -1,0 +1,75 @@
+{
+  "call_id": "ab5a0473-69a5-4cb0-9197-2e7fb008d13f",
+  "call_data": {
+    "id": "ab5a0473-69a5-4cb0-9197-2e7fb008d13f",
+    "recording_url": "https://cloudphone.tatateleservices.com/file/recording?callId=93f990fb-b3f3-4202-9d13-e0cb64c58f8b&type=rec&token=WEdlUTlZd3MxYkVLeTBRKzNXbVQvSC9qeTdKVnJOLzg5WFRCRkRCTUliclU5OFlBWC9EK2o5WFl2cUI1cEpYODo6YWIxMjM0Y2Q1NnJ0eXl1dQ%3D%3D",
+    "call_id": "93f990fb-b3f3-4202-9d13-e0cb64c58f8b",
+    "caller_id_number": "+919240237380",
+    "call_to_number": "8802419277",
+    "start_date": "2025-08-21",
+    "start_time": "12:29:57",
+    "duration": "99",
+    "agent_name": "Himanshu Singh",
+    "campaign_name": "Target Cargill Orders"
+  },
+  "transcription": "[00:01] Hello?\n[00:04] सर ये मनोज जी से बात हो रही है?\n[00:06] हाँजी।\n[00:07] सर आपकी कोई किराना वाला की शॉप है क्या?\n[00:10] हाँजी सर।\n[00:12] सर ये मैं बड़ो ऐप की तरफ से बात कर रहा था। ये आपने अपने फोन पर बड़ो ऐप फोन डाउनलोड किया होगा, इस वजह से मैं आपको कॉल कर रहा हूं। है ना सर?\n[00:19] हाँजी।\n[00:20] जी जी। तो अपनी शॉप पे सर ये ऑयल वगैरह रखते हैं क्या सर?\n[00:25] हाँजी सर ये पंसारी का रखते हैं।\n[00:27] किसका सर?\n[00:29] पंसारी।\n[00:30] अच्छा अच्छा पंसारी। तो ये जैसे रथ वगैरह का नहीं रखते हैं सर? रथ हुआ, वनस्पति ऑयल आप रखते नहीं सर?\n[00:35] नहीं सर, नहीं रखते।\n[00:38] अच्छा तो इसमें क्या है की अभी ऑफर चल रहा था...\n[00:43] अच्छा अच्छा।\n[00:46] तो इसमें क्या है की वनस्पति ऑयल पे ऑफर चल रहा था। 500 एमएल वाला ₹119 की एमआरपी वाला ₹72 का पड़ रहा है सर आपको, है ना सर?\n[00:56] जी जी। सर अभी तो फिलहाल नहीं चाहिए सर, अभी तो माल भरा अभी दुकान में।\n[00:59] चलिए ठीक है। अगर आप चाहें तो एक छोटा सा ऑर्डर लगा के देखिए इसका सर। मिनिमम ऑर्डर जो ₹2000 तक का है, कैश ऑन डिलीवरी का ऑर्डर है सर।\n[01:06] ठीक है सर, ठीक है।\n[01:08] ठीक सर? अगर आप चाहें तो मैं लगा दें, लगा दें यहां से क्या ऑर्डर आपका?\n[01:12] नहीं सर अभी नहीं, अभी सारा माल भरा अभी।\n[01:14] चलिए ठीक है सर, ठीक है।\n[01:15] ओके।\n[01:16] ठीक है सर।",
+  "questions_and_answers": [
+    {
+      "id": "12ecc54f-8b6d-4fa6-bbc5-8f7f89e435b5",
+      "label": "Was there a network issue?",
+      "isActive": true,
+      "details": {
+        "answer": "false",
+        "options": [
+          {
+            "option1": true
+          },
+          {
+            "option2": false
+          }
+        ],
+        "answerType": "boolean",
+        "instructions": "Only answer in 'true' or 'false'.",
+        "questionText": "Was there a network issue?"
+      },
+      "question_text": "Was there a network issue?",
+      "answer_type": "boolean",
+      "instructions": "Only answer in 'true' or 'false'.",
+      "answer": "false",
+      "answered_at": "2025-09-07T20:31:40.757852"
+    },
+    {
+      "id": "51c508bb-ae3c-4c11-9781-b4a76ec6573b",
+      "label": "How long was the call?",
+      "isActive": true,
+      "details": {
+        "answer": "1",
+        "answerType": "integer",
+        "instructions": "Only answer the number while taking minutes as the unit. Like if the call duration was 5.3 minutes then answer the round-off integer that is 5, if it was 1 hr 10 mins then answer 70, don't write the unit minutes in the answer.",
+        "questionText": "How long was the call?"
+      },
+      "question_text": "How long was the call?",
+      "answer_type": "integer",
+      "instructions": "Only answer the number while taking minutes as the unit. Like if the call duration was 5.3 minutes then answer the round-off integer that is 5, if it was 1 hr 10 mins then answer 70, don't write the unit minutes in the answer.",
+      "answer": "1",
+      "answered_at": "2025-09-07T20:31:40.757924"
+    },
+    {
+      "id": "c49c855a-c6c9-4150-bbfa-c5b9a0e00872",
+      "label": "What feedback related to app experience was given by the user to our calling executive?",
+      "isActive": true,
+      "details": {
+        "answer": "Information not available in the call",
+        "answerType": "description",
+        "instructions": "Write an overall summary of the feedback given by the user in maximum 100 words.",
+        "questionText": "What feedback related to app experience was given by the user to our calling executive?"
+      },
+      "question_text": "What feedback related to app experience was given by the user to our calling executive?",
+      "answer_type": "description",
+      "instructions": "Write an overall summary of the feedback given by the user in maximum 100 words.",
+      "answer": "Information not available in the call",
+      "answered_at": "2025-09-07T20:31:40.757930"
+    }
+  ],
+  "processed_at": "2025-09-07T20:31:40.919064"
+}

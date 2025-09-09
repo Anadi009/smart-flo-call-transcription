@@ -9,69 +9,17 @@ class TranscriptionPipeline {
     }
 
     async connectToDatabase() {
-        // Parse connection string or use individual environment variables
-        let config;
-        
-        if (this.dbConnectionString) {
-            try {
-                // Validate connection string format
-                if (!this.dbConnectionString.startsWith('postgres://') && !this.dbConnectionString.startsWith('postgresql://')) {
-                    throw new Error('Invalid connection string format. Must start with postgres:// or postgresql://');
-                }
-                
-                // Parse connection string: postgres://user:password@host:port/database
-                const url = new URL(this.dbConnectionString);
-                
-                // Validate required components
-                if (!url.hostname) throw new Error('Hostname is required in connection string');
-                if (!url.pathname || url.pathname === '/') throw new Error('Database name is required in connection string');
-                if (!url.username) throw new Error('Username is required in connection string');
-                if (!url.password) throw new Error('Password is required in connection string');
-                
-                config = {
-                    host: url.hostname,
-                    port: parseInt(url.port) || 5432,
-                    database: url.pathname.substring(1), // Remove leading slash
-                    user: url.username,
-                    password: url.password,
-                    ssl: this.getSSLConfig(),
-                    connectionTimeoutMillis: parseInt(url.searchParams.get('connect_timeout')) * 1000 || 10000,
-                    query_timeout: parseInt(url.searchParams.get('query_timeout')) || 30000,
-                    statement_timeout: parseInt(url.searchParams.get('statement_timeout')) || 30000,
-                    idle_in_transaction_session_timeout: parseInt(url.searchParams.get('idle_in_transaction_session_timeout')) || 30000
-                };
-            } catch (parseError) {
-                throw new Error(`Failed to parse connection string: ${parseError.message}`);
-            }
-        } else {
-            // Use individual environment variables as fallback
-            const requiredEnvVars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
-            const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-            
-            if (missingVars.length > 0) {
-                throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-            }
-
-            config = {
-                host: process.env.DB_HOST,
-                port: parseInt(process.env.DB_PORT) || 5432,
-                database: process.env.DB_NAME,
-                user: process.env.DB_USER,
-                password: process.env.DB_PASSWORD,
-                ssl: this.getSSLConfig(),
-                connectionTimeoutMillis: 5000,
-                query_timeout: 30000,
-                statement_timeout: 30000,
-                idle_in_transaction_session_timeout: 30000
-            };
-        }
-        
         try {
-            this.client = new Client(config);
+            this.client = new Client({
+                connectionString: this.dbConnectionString,
+                ssl: {
+                    rejectUnauthorized: false
+                }
+            });
             
             // Set up connection timeout
             const connectionTimeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Database connection timeout')), config.connectionTimeoutMillis || 10000);
+                setTimeout(() => reject(new Error('Database connection timeout')), 10000);
             });
             
             // Race between connection and timeout

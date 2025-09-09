@@ -391,6 +391,7 @@ exports.handler = async (event) => {
         
         // Check if this is a test or if we want synchronous processing
         const isAsync = process.env.ASYNC_PROCESSING !== 'false';
+        let response;
         
         if (isAsync) {
             // Asynchronous processing - start and return immediately
@@ -419,7 +420,7 @@ exports.handler = async (event) => {
                 });
             
             // Return immediately - don't wait for processing
-            const response = {
+            response = {
                 statusCode: 202,
                 message: 'Call processing started in background',
                 call_logsId: callLogsId,
@@ -431,7 +432,7 @@ exports.handler = async (event) => {
             console.log(`🚀 Starting synchronous processing for call_logsId: ${callLogsId}`);
             const result = await pipeline.processCall(callLogsId);
             
-            const response = {
+            response = {
                 statusCode: 200,
                 message: 'Call processing completed successfully',
                 call_logsId: result.call_logsId,
@@ -443,7 +444,7 @@ exports.handler = async (event) => {
         }
         
         return {
-            statusCode: 202,
+            statusCode: response.statusCode,
             ...(isApiGateway && { headers, body: JSON.stringify(response) }),
             ...(!isApiGateway && { body: response })
         };

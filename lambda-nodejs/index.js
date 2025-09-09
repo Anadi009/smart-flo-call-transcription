@@ -40,12 +40,20 @@ class TranscriptionPipeline {
                 user: process.env.DB_USER,
                 password: process.env.DB_PASSWORD,
                 ssl: { rejectUnauthorized: false },
-                connectionTimeoutMillis: 10000
+                connectionTimeoutMillis: 5000
             };
         }
         
-        this.client = new Client(config);
-        await this.client.connect();
+        try {
+            this.client = new Client(config);
+            await this.client.connect();
+            
+            // Verify connection with a simple query
+            await this.client.query('SELECT NOW()');
+        } catch (error) {
+            await this.client?.end().catch(() => {});
+            throw new Error(`Failed to connect to database: ${error.message}`);
+        }
     }
 
     async closeDatabase() {

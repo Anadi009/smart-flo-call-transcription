@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -22,7 +21,7 @@ import (
 
 // LambdaRequest represents the incoming Lambda event
 type LambdaRequest struct {
-	CallID string `json:"call_id"`
+	CallLogsID string `json:"call_logsId"`
 }
 
 // LambdaResponse represents the Lambda response
@@ -44,6 +43,7 @@ type CallData struct {
 	Duration        int       `json:"duration"`
 	AgentName       string    `json:"agent_name"`
 	CampaignName    string    `json:"campaign_name"`
+	CampaignID      string    `json:"campaignId"`
 }
 
 // Question represents a question from the database
@@ -57,6 +57,13 @@ type Question struct {
 	Instructions string                 `json:"instructions"`
 	Answer       string                 `json:"answer,omitempty"`
 	AnsweredAt   string                 `json:"answered_at,omitempty"`
+}
+
+// CallAnalysisData represents the data to be saved in callAnalysis column
+type CallAnalysisData struct {
+	Transcription string            `json:"transcription"`
+	Answers       map[string]string `json:"answers"`
+	ProcessedAt   string            `json:"processed_at"`
 }
 
 // GeminiRequest represents the request to Gemini API
@@ -109,6 +116,11 @@ func (tp *TranscriptionPipeline) ConnectToDatabase() error {
 		return fmt.Errorf("failed to open database connection: %v", err)
 	}
 
+	// Set connection timeouts
+	db.SetConnMaxLifetime(30 * time.Second)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("failed to ping database: %v", err)
 	}
@@ -125,16 +137,16 @@ func (tp *TranscriptionPipeline) CloseDatabase() {
 }
 
 // GetCallData retrieves call data from the database
-func (tp *TranscriptionPipeline) GetCallData(callID string) (*CallData, error) {
+func (tp *TranscriptionPipeline) GetCallData(callLogsID string) (*CallData, error) {
 	query := `
 		SELECT id, recording_url, call_id, caller_id_number, call_to_number, 
-		       start_date, start_time, duration, agent_name, campaign_name
+		       start_date, start_time, duration, agent_name, campaign_name, "campaignId"
 		FROM "smartFlo".call_logs 
 		WHERE id = $1
 	`
 
 	var callData CallData
-	err := tp.db.QueryRow(query, callID).Scan(
+	err := tp.db.QueryRow(query, callLogsID).Scan(
 		&callData.ID,
 		&callData.RecordingURL,
 		&callData.CallID,
@@ -145,11 +157,12 @@ func (tp *TranscriptionPipeline) GetCallData(callID string) (*CallData, error) {
 		&callData.Duration,
 		&callData.AgentName,
 		&callData.CampaignName,
+		&callData.CampaignID,
 	)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no call found with ID: %s", callID)
+			return nil, fmt.Errorf("no call found with ID: %s", callLogsID)
 		}
 		return nil, fmt.Errorf("error fetching call data: %v", err)
 	}
@@ -157,18 +170,19 @@ func (tp *TranscriptionPipeline) GetCallData(callID string) (*CallData, error) {
 	return &callData, nil
 }
 
-// GetQuestions retrieves active questions from the database
-func (tp *TranscriptionPipeline) GetQuestions() ([]Question, error) {
+// GetQuestionsForCampaign retrieves questions specific to the campaign
+func (tp *TranscriptionPipeline) GetQuestionsForCampaign(campaignID string) ([]Question, error) {
 	query := `
-		SELECT id, label, "isActive", details
-		FROM "smartFlo".question 
-		WHERE "isActive" = true
-		ORDER BY id
+		SELECT q.id, q.label, q."isActive", q.details
+		FROM "smartFlo".question q
+		INNER JOIN "smartFlo".campaign_question cq ON q.id = cq."questionId"
+		WHERE q."isActive" = true AND cq."campaignId" = $1
+		ORDER BY q.id
 	`
 
-	rows, err := tp.db.Query(query)
+	rows, err := tp.db.Query(query, campaignID)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching questions: %v", err)
+		return nil, fmt.Errorf("error fetching questions for campaign: %v", err)
 	}
 	defer rows.Close()
 
@@ -226,12 +240,90 @@ func (tp *TranscriptionPipeline) DownloadAudio(recordingURL string) ([]byte, err
 	return audioData, nil
 }
 
+// TranscribeAudioOnly transcribes audio without answering questions
+func (tp *TranscriptionPipeline) TranscribeAudioOnly(audioContent []byte) (string, error) {
+	// Encode audio to base64
+	audioBase64 := base64.StdEncoding.EncodeToString(audioContent)
+
+	prompt := "Please transcribe the following audio file."
+
+	// Prepare the request
+	geminiURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
+	
+	requestData := GeminiRequest{
+		Contents: []Content{
+			{
+				Parts: []Part{
+					{
+						Text: prompt,
+					},
+					{
+						InlineData: &InlineData{
+							MimeType: "audio/mpeg",
+							Data:     audioBase64,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return "", fmt.Errorf("error marshaling request: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", geminiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	
+	// Add API key as query parameter
+	q := req.URL.Query()
+	q.Add("key", tp.geminiAPIKey)
+	req.URL.RawQuery = q.Encode()
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("gemini API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var geminiResp GeminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
+		return "", fmt.Errorf("error decoding response: %v", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 {
+		return "", fmt.Errorf("no response generated from Gemini API")
+	}
+
+	if len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("no content parts in Gemini response")
+	}
+
+	transcription := geminiResp.Candidates[0].Content.Parts[0].Text
+	if transcription == "" {
+		return "", fmt.Errorf("empty transcription received from Gemini API")
+	}
+
+	return transcription, nil
+}
+
 // ProcessAudioWithGemini transcribes audio and answers questions in a single call
 func (tp *TranscriptionPipeline) ProcessAudioWithGemini(audioContent []byte, questions []Question) (string, map[string]string, error) {
 	// Encode audio to base64
 	audioBase64 := base64.StdEncoding.EncodeToString(audioContent)
 
-	// Prepare questions text for Gemini
+	// Prepare questions text for Gemini using details from database
 	questionsText := ""
 	var answerConstraints []string
 	questionIDs := make([]string, len(questions))
@@ -240,20 +332,21 @@ func (tp *TranscriptionPipeline) ProcessAudioWithGemini(audioContent []byte, que
 		questionIDs[i] = q.ID
 		questionsText += fmt.Sprintf("%d. %s\n", i+1, q.QuestionText)
 
-		// Add answer type constraints
-		switch q.AnswerType {
-		case "boolean":
-			answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be ONLY 'true' or 'false'", i+1))
-		case "integer":
-			answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be ONLY a number (no units, no text)", i+1))
-		case "description":
-			answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be a descriptive summary", i+1))
-		default:
-			answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer should be clear and concise", i+1))
-		}
-
+		// Use instructions from details column instead of hardcoded constraints
 		if q.Instructions != "" {
 			answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: %s", i+1, q.Instructions))
+		} else {
+			// Fallback to basic constraints if no instructions in details
+			switch q.AnswerType {
+			case "boolean":
+				answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be ONLY 'true' or 'false'", i+1))
+			case "integer":
+				answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be ONLY a number (no units, no text)", i+1))
+			case "description":
+				answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer must be a descriptive summary", i+1))
+			default:
+				answerConstraints = append(answerConstraints, fmt.Sprintf("Question %d: Answer should be clear and concise", i+1))
+			}
 		}
 	}
 
@@ -268,7 +361,7 @@ QUESTIONS TO ANSWER:
 ANSWER CONSTRAINTS:
 %s
 
-IMPORTANT: Follow the answer type constraints exactly. For boolean questions, answer only 'true' or 'false'. For integer questions, answer only the number. For description questions, provide a summary.
+IMPORTANT: Follow the answer constraints exactly as specified for each question.
 
 Please provide your response in the following format:
 TRANSCRIPTION:
@@ -318,7 +411,7 @@ etc.
 	q.Add("key", tp.geminiAPIKey)
 	req.URL.RawQuery = q.Encode()
 
-	client := &http.Client{Timeout: 120 * time.Second} // Increased timeout for combined operation
+	client := &http.Client{Timeout: 45 * time.Second} // Reduced timeout for faster failure
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, fmt.Errorf("error making request: %v", err)
@@ -336,10 +429,17 @@ etc.
 	}
 
 	if len(geminiResp.Candidates) == 0 {
-		return "", nil, fmt.Errorf("no response generated")
+		return "", nil, fmt.Errorf("no response generated from Gemini API")
+	}
+
+	if len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return "", nil, fmt.Errorf("no content parts in Gemini response")
 	}
 
 	responseText := geminiResp.Candidates[0].Content.Parts[0].Text
+	if responseText == "" {
+		return "", nil, fmt.Errorf("empty response received from Gemini API")
+	}
 	
 	// Parse transcription and answers
 	transcription, answers := tp.parseTranscriptionAndAnswers(responseText, questionIDs)
@@ -403,8 +503,38 @@ func (tp *TranscriptionPipeline) parseTranscriptionAndAnswers(responseText strin
 	return transcription, answers
 }
 
+// SaveCallAnalysis saves the analysis data to the callAnalysis column
+func (tp *TranscriptionPipeline) SaveCallAnalysis(callLogsID string, transcription string, answers map[string]string) error {
+	// Prepare the analysis data
+	analysisData := CallAnalysisData{
+		Transcription: transcription,
+		Answers:       answers,
+		ProcessedAt:   time.Now().Format(time.RFC3339),
+	}
+
+	// Convert to JSON
+	analysisJSON, err := json.Marshal(analysisData)
+	if err != nil {
+		return fmt.Errorf("error marshaling analysis data: %v", err)
+	}
+
+	// Update only the callAnalysis column for the specific ID
+	updateQuery := `
+		UPDATE "smartFlo".call_logs 
+		SET "callAnalysis" = $1
+		WHERE id = $2
+	`
+
+	_, err = tp.db.Exec(updateQuery, string(analysisJSON), callLogsID)
+	if err != nil {
+		return fmt.Errorf("error updating callAnalysis: %v", err)
+	}
+
+	return nil
+}
+
 // ProcessCall processes a call: transcribe audio and answer questions
-func (tp *TranscriptionPipeline) ProcessCall(callID string) (map[string]interface{}, error) {
+func (tp *TranscriptionPipeline) ProcessCall(callLogsID string) (map[string]interface{}, error) {
 	// Connect to database
 	if err := tp.ConnectToDatabase(); err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
@@ -412,7 +542,7 @@ func (tp *TranscriptionPipeline) ProcessCall(callID string) (map[string]interfac
 	defer tp.CloseDatabase()
 
 	// Get call data
-	callData, err := tp.GetCallData(callID)
+	callData, err := tp.GetCallData(callLogsID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get call data: %v", err)
 	}
@@ -421,10 +551,14 @@ func (tp *TranscriptionPipeline) ProcessCall(callID string) (map[string]interfac
 		return nil, fmt.Errorf("no recording URL found for this call")
 	}
 
-	// Get questions
-	questions, err := tp.GetQuestions()
+	if callData.CampaignID == "" {
+		return nil, fmt.Errorf("no campaign ID found for this call")
+	}
+
+	// Get questions specific to the campaign
+	questions, err := tp.GetQuestionsForCampaign(callData.CampaignID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get questions: %v", err)
+		return nil, fmt.Errorf("failed to get questions for campaign: %v", err)
 	}
 
 	// Download audio
@@ -433,17 +567,40 @@ func (tp *TranscriptionPipeline) ProcessCall(callID string) (map[string]interfac
 		return nil, fmt.Errorf("failed to download audio: %v", err)
 	}
 
-	// Process audio and answer questions in a single call
-	transcription, answers, err := tp.ProcessAudioWithGemini(audioContent, questions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process audio: %v", err)
+	// Check if audio content is empty
+	if len(audioContent) == 0 {
+		return nil, fmt.Errorf("downloaded audio file is empty")
+	}
+
+	var transcription string
+	var answers map[string]string
+
+	if len(questions) == 0 {
+		// No questions linked to campaign - only transcribe audio
+		transcription, err = tp.TranscribeAudioOnly(audioContent)
+		if err != nil {
+			return nil, fmt.Errorf("failed to transcribe audio: %v", err)
+		}
+		answers = make(map[string]string)
+	} else {
+		// Process audio and answer questions in a single call
+		transcription, answers, err = tp.ProcessAudioWithGemini(audioContent, questions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process audio: %v", err)
+		}
+	}
+
+	// Save analysis data to callAnalysis column
+	if err := tp.SaveCallAnalysis(callLogsID, transcription, answers); err != nil {
+		return nil, fmt.Errorf("failed to save call analysis: %v", err)
 	}
 
 	// Create minimal response with only essential data
 	result := map[string]interface{}{
-		"call_id":       callData.ID,
+		"call_logsId":  callLogsID,
+		"campaignId":   callData.CampaignID,
 		"transcription": transcription,
-		"answers":       answers, // Only question ID -> answer mapping
+		"answers":       answers,
 		"processed_at":  time.Now().Format(time.RFC3339),
 	}
 
@@ -462,7 +619,7 @@ func LambdaHandler(ctx context.Context, request LambdaRequest) (LambdaResponse, 
 	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
 
 	if dbConnectionString == "" {
-		dbConnectionString = "postgres://postgres:Badho_1301@db.badho.in:5432/badho-app"
+		dbConnectionString = "postgres://postgres:Badho_1301@db.badho.in:5432/badho-app?connect_timeout=10&statement_timeout=30000"
 	}
 	if geminiAPIKey == "" {
 		geminiAPIKey = "AIzaSyATn1vcksF5BIJiBSn31CGfdslfysGtpOc"
@@ -472,7 +629,7 @@ func LambdaHandler(ctx context.Context, request LambdaRequest) (LambdaResponse, 
 	pipeline := NewTranscriptionPipeline(dbConnectionString, geminiAPIKey)
 
 	// Process the call
-	result, err := pipeline.ProcessCall(request.CallID)
+	result, err := pipeline.ProcessCall(request.CallLogsID)
 	if err != nil {
 		return LambdaResponse{
 			StatusCode: 500,
@@ -487,34 +644,6 @@ func LambdaHandler(ctx context.Context, request LambdaRequest) (LambdaResponse, 
 }
 
 func main() {
-	// Check if we're running in test mode
-	if len(os.Args) > 1 && os.Args[1] == "test" {
-		// Run test locally
-		request := LambdaRequest{
-			CallID: "c86d4b0d-5c9b-4edf-8b07-08a4833dcf50", // Use a known call ID from your database
-		}
-
-		fmt.Println("�� Testing Lambda function locally...")
-		fmt.Printf("📞 Processing call ID: %s\n", request.CallID)
-		fmt.Println(strings.Repeat("=", 50))
-
-		// Call the Lambda handler
-		response, err := LambdaHandler(context.Background(), request)
-		if err != nil {
-			log.Fatalf("❌ Error: %v", err)
-		}
-
-		// Print the response
-		responseJSON, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			log.Fatalf("❌ Error marshaling response: %v", err)
-		}
-
-		fmt.Println("✅ Lambda Response:")
-		fmt.Println(string(responseJSON))
-		return
-	}
-
-	// Normal Lambda execution
 	lambda.Start(LambdaHandler)
 }
+

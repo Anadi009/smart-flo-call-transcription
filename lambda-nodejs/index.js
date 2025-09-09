@@ -13,17 +13,36 @@ class TranscriptionPipeline {
         let config;
         
         if (this.dbConnectionString) {
-            // Parse connection string: postgres://user:password@host:port/database
-            const url = new URL(this.dbConnectionString);
-            config = {
-                host: url.hostname,
-                port: parseInt(url.port) || 5432,
-                database: url.pathname.substring(1), // Remove leading slash
-                user: url.username,
-                password: url.password,
-                ssl: { rejectUnauthorized: false },
-                connectionTimeoutMillis: 10000
-            };
+            try {
+                // Validate connection string format
+                if (!this.dbConnectionString.startsWith('postgres://') && !this.dbConnectionString.startsWith('postgresql://')) {
+                    throw new Error('Invalid connection string format. Must start with postgres:// or postgresql://');
+                }
+                
+                // Parse connection string: postgres://user:password@host:port/database
+                const url = new URL(this.dbConnectionString);
+                
+                // Validate required components
+                if (!url.hostname) throw new Error('Hostname is required in connection string');
+                if (!url.pathname || url.pathname === '/') throw new Error('Database name is required in connection string');
+                if (!url.username) throw new Error('Username is required in connection string');
+                if (!url.password) throw new Error('Password is required in connection string');
+                
+                config = {
+                    host: url.hostname,
+                    port: parseInt(url.port) || 5432,
+                    database: url.pathname.substring(1), // Remove leading slash
+                    user: url.username,
+                    password: url.password,
+                    ssl: this.getSSLConfig(),
+                    connectionTimeoutMillis: parseInt(url.searchParams.get('connect_timeout')) * 1000 || 10000,
+                    query_timeout: parseInt(url.searchParams.get('query_timeout')) || 30000,
+                    statement_timeout: parseInt(url.searchParams.get('statement_timeout')) || 30000,
+                    idle_in_transaction_session_timeout: parseInt(url.searchParams.get('idle_in_transaction_session_timeout')) || 30000
+                };
+            } catch (parseError) {
+                throw new Error(`Failed to parse connection string: ${parseError.message}`);
+            }
         } else {
             // Use individual environment variables as fallback
             const requiredEnvVars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
@@ -39,20 +58,61 @@ class TranscriptionPipeline {
                 database: process.env.DB_NAME,
                 user: process.env.DB_USER,
                 password: process.env.DB_PASSWORD,
-                ssl: { rejectUnauthorized: false },
-                connectionTimeoutMillis: 5000
+                ssl: this.getSSLConfig(),
+                connectionTimeoutMillis: 5000,
+                query_timeout: 30000,
+                statement_timeout: 30000,
+                idle_in_transaction_session_timeout: 30000
             };
         }
         
         try {
             this.client = new Client(config);
-            await this.client.connect();
             
-            // Verify connection with a simple query
-            await this.client.query('SELECT NOW()');
+            // Set up connection timeout
+            const connectionTimeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Database connection timeout')), config.connectionTimeoutMillis || 10000);
+            });
+            
+            // Race between connection and timeout
+            await Promise.race([
+                this.client.connect(),
+                connectionTimeout
+            ]);
+            
+            console.log(`🔗 Database connection established`);
+            
+            // Verify connection with a simple query (with timeout)
+            const queryTimeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Database query timeout')), 5000);
+            });
+            
+            await Promise.race([
+                this.client.query('SELECT NOW()'),
+                queryTimeout
+            ]);
+            
+            console.log(`✅ Database connection verified`);
         } catch (error) {
+            console.error(`❌ Database connection failed: ${error.message}`);
             await this.client?.end().catch(() => {});
             throw new Error(`Failed to connect to database: ${error.message}`);
+        }
+    }
+
+    getSSLConfig() {
+        // Use environment variable to control SSL behavior
+        const sslMode = process.env.DB_SSL_MODE || 'prefer';
+        
+        switch (sslMode.toLowerCase()) {
+            case 'require':
+                return { rejectUnauthorized: true };
+            case 'prefer':
+                return { rejectUnauthorized: false };
+            case 'disable':
+                return false;
+            default:
+                return { rejectUnauthorized: false };
         }
     }
 
@@ -107,7 +167,7 @@ class TranscriptionPipeline {
                     ]
                 }]
             },
-            timeout: 90000
+            timeout: 100000
         });
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -195,6 +255,29 @@ etc.`;
         const startTime = Date.now();
         console.log(`🔄 Processing call_logsId: ${callLogsId}`);
         
+        // Set up overall timeout (13 minutes for Lambda max - 2 minutes buffer)
+        const timeoutMs = parseInt(process.env.PROCESSING_TIMEOUT_MS) || (13 * 60 * 1000);
+        const processingTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`Processing timeout after ${timeoutMs}ms`)), timeoutMs);
+        });
+        
+        try {
+            // Race between actual processing and timeout
+            return await Promise.race([
+                this._processCallInternal(callLogsId, startTime),
+                processingTimeout
+            ]);
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            console.error(`❌ Processing failed after ${duration}ms:`, error.message);
+            throw error;
+        } finally {
+            console.log(`🔌 Closing database connection...`);
+            await this.closeDatabase();
+        }
+    }
+
+    async _processCallInternal(callLogsId, startTime) {
         try {
             console.log(`🔌 Connecting to database...`);
             await this.connectToDatabase();
@@ -237,12 +320,12 @@ etc.`;
             const duration = Date.now() - startTime;
             console.error(`❌ Processing failed after ${duration}ms:`, error.message);
             throw error;
-        } finally {
-            console.log(`🔌 Closing database connection...`);
-            await this.closeDatabase();
         }
     }
 }
+
+// Export the TranscriptionPipeline class for testing
+exports.TranscriptionPipeline = TranscriptionPipeline;
 
 exports.handler = async (event) => {
     const isApiGateway = event.httpMethod || event.requestContext;
@@ -306,40 +389,58 @@ exports.handler = async (event) => {
 
         const pipeline = new TranscriptionPipeline(dbConnectionString, geminiApiKey);
         
-        // Fire-and-forget processing - start and return immediately
-        console.log(`🚀 Starting fire-and-forget processing for call_logsId: ${callLogsId}`);
-        console.log(`⏰ Processing started at: ${new Date().toISOString()}`);
+        // Check if this is a test or if we want synchronous processing
+        const isAsync = process.env.ASYNC_PROCESSING !== 'false';
         
-        // Start processing in background using process.nextTick to ensure it runs
-        process.nextTick(async () => {
-            try {
-                const result = await pipeline.processCall(callLogsId);
-                console.log(`✅ Processing completed successfully for call_logsId: ${callLogsId}`);
-                console.log(`📊 Result summary:`, {
-                    call_logsId: result.call_logsId,
-                    campaignId: result.campaignId,
-                    transcriptionLength: result.transcription?.length || 0,
-                    answersCount: Object.keys(result.answers || {}).length,
-                    processed_at: result.processed_at
+        if (isAsync) {
+            // Asynchronous processing - start and return immediately
+            console.log(`🚀 Starting asynchronous processing for call_logsId: ${callLogsId}`);
+            console.log(`⏰ Processing started at: ${new Date().toISOString()}`);
+            
+            // Start processing without waiting for completion
+            pipeline.processCall(callLogsId)
+                .then(result => {
+                    console.log(`✅ Processing completed successfully for call_logsId: ${callLogsId}`);
+                    console.log(`📊 Result summary:`, {
+                        call_logsId: result.call_logsId,
+                        campaignId: result.campaignId,
+                        transcriptionLength: result.transcription?.length || 0,
+                        answersCount: Object.keys(result.answers || {}).length,
+                        processed_at: result.processed_at
+                    });
+                })
+                .catch(error => {
+                    console.error(`❌ Background processing failed for call_logsId: ${callLogsId}`);
+                    console.error(`🔍 Error details:`, {
+                        message: error.message,
+                        stack: error.stack,
+                        timestamp: new Date().toISOString()
+                    });
                 });
-            } catch (error) {
-                console.error(`❌ Background processing failed for call_logsId: ${callLogsId}`);
-                console.error(`🔍 Error details:`, {
-                    message: error.message,
-                    stack: error.stack,
-                    timestamp: new Date().toISOString()
-                });
-            }
-        });
-        
-        // Return immediately - don't wait for processing
-        const response = {
-            statusCode: 202,
-            message: 'Call processing started in background',
-            call_logsId: callLogsId,
-            timestamp: new Date().toISOString(),
-            note: 'Processing continues in background. Check CloudWatch logs for progress.'
-        };
+            
+            // Return immediately - don't wait for processing
+            const response = {
+                statusCode: 202,
+                message: 'Call processing started in background',
+                call_logsId: callLogsId,
+                timestamp: new Date().toISOString(),
+                note: 'Processing continues in background. Check CloudWatch logs for progress.'
+            };
+        } else {
+            // Synchronous processing - wait for completion
+            console.log(`🚀 Starting synchronous processing for call_logsId: ${callLogsId}`);
+            const result = await pipeline.processCall(callLogsId);
+            
+            const response = {
+                statusCode: 200,
+                message: 'Call processing completed successfully',
+                call_logsId: result.call_logsId,
+                campaignId: result.campaignId,
+                transcriptionLength: result.transcription?.length || 0,
+                answersCount: Object.keys(result.answers || {}).length,
+                processed_at: result.processed_at
+            };
+        }
         
         return {
             statusCode: 202,
